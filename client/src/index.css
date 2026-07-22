@@ -1,0 +1,204 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --radius: 0.625rem;
+
+  /* Dark theme - Elegant dark finance app */
+  --background: oklch(0.12 0.01 240);
+  --foreground: oklch(0.95 0.005 240);
+
+  --card: oklch(0.16 0.012 240);
+  --card-foreground: oklch(0.95 0.005 240);
+
+  --popover: oklch(0.18 0.012 240);
+  --popover-foreground: oklch(0.95 0.005 240);
+
+  /* Accent blue - sophisticated */
+  --primary: oklch(0.65 0.18 240);
+  --primary-foreground: oklch(0.98 0.005 240);
+
+  --secondary: oklch(0.22 0.015 240);
+  --secondary-foreground: oklch(0.85 0.01 240);
+
+  --muted: oklch(0.20 0.012 240);
+  --muted-foreground: oklch(0.60 0.015 240);
+
+  --accent: oklch(0.22 0.015 240);
+  --accent-foreground: oklch(0.90 0.01 240);
+
+  --destructive: oklch(0.55 0.22 25);
+
+  --border: oklch(0.25 0.015 240);
+  --input: oklch(0.22 0.015 240);
+  --ring: oklch(0.65 0.18 240);
+
+  /* Charts */
+  --chart-1: oklch(0.65 0.18 240);
+  --chart-2: oklch(0.70 0.15 160);
+  --chart-3: oklch(0.72 0.16 60);
+  --chart-4: oklch(0.68 0.18 300);
+  --chart-5: oklch(0.65 0.20 25);
+
+  /* Sidebar */
+  --sidebar: oklch(0.10 0.01 240);
+  --sidebar-foreground: oklch(0.85 0.01 240);
+  --sidebar-primary: oklch(0.65 0.18 240);
+  --sidebar-primary-foreground: oklch(0.98 0.005 240);
+  --sidebar-accent: oklch(0.18 0.015 240);
+  --sidebar-accent-foreground: oklch(0.90 0.01 240);
+  --sidebar-border: oklch(0.20 0.012 240);
+  --sidebar-ring: oklch(0.65 0.18 240);
+
+  /* Custom app colors */
+  --profit: oklch(0.68 0.18 145);
+  --profit-muted: oklch(0.68 0.18 145 / 0.15);
+  --loss: oklch(0.62 0.22 25);
+  --loss-muted: oklch(0.62 0.22 25 / 0.15);
+  --neutral: oklch(0.60 0.015 240);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Pretendard Variable', 'Pretendard', 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.01em;
+  }
+  /* 타이틀 및 헤더 */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Pretendard Variable', 'Pretendard', 'Inter', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.25;
+  }
+  /* 테이블 헤더 */
+  th {
+    font-family: 'Pretendard Variable', 'Pretendard', 'Inter', sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+}
+
+/* Custom utility classes */
+@layer utilities {
+  .text-profit {
+    color: var(--profit);
+  }
+  .text-loss {
+    color: var(--loss);
+  }
+  .bg-profit-muted {
+    background-color: var(--profit-muted);
+  }
+  .bg-loss-muted {
+    background-color: var(--loss-muted);
+  }
+  .border-profit {
+    border-color: var(--profit);
+  }
+  .border-loss {
+    border-color: var(--loss);
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(0.30 0.015 240);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.40 0.015 240);
+}
+
+/* Container */
+.container {
+  @apply mx-auto px-4 sm:px-6 lg:px-8;
+  max-width: 1400px;
+}
+
+/* Flex default min-size fix */
+.flex {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Button active scale */
+button:active:not(:disabled) {
+  transform: scale(0.97);
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Number font - JetBrains Mono for crisp financial figures */
+.font-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.02em;
+}
+
+/* 티커 심볼 스타일 */
+.ticker-symbol {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* 사이드바 로고 타이틀 */
+.sidebar-title {
+  font-family: 'Pretendard Variable', 'Pretendard', sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}

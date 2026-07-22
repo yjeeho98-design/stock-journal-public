@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1784648386467,
+      "tag": "0000_numerous_mister_fear",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1784648572006,
+      "tag": "0001_awesome_carmella_unuscione",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1784665002798,
+      "tag": "0002_safe_mantis",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1784721974271,
+      "tag": "0003_lush_stephen_strange",
+      "breakpoints": true
+    }
+  ]
+}

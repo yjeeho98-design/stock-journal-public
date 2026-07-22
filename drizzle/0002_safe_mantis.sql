@@ -1,0 +1,1 @@
+ALTER TABLE `fund_records` MODIFY COLUMN `recordType` enum('deposit','withdrawal','interest','extra_visit','extra_mobile','extra_board') NOT NULL;
