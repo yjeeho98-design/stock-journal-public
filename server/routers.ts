@@ -270,8 +270,8 @@ export const appRouter = router({
           if (isUs) {
             commission = (price * qty * exRate * usRate) / 100;
             if (isSell) {
-              secFee = (price * qty * secRate) / 100;
-              tax = secFee * exRate;
+              // 모든 거래 비용 필드는 원화로 저장한다. 미국 매도 SEC Fee도 환율을 적용한다.
+              secFee = (price * qty * secRate * exRate) / 100;
             }
           } else {
             commission = (totalKrw * krRate) / 100;

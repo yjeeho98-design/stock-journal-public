@@ -27,6 +27,22 @@ import { KR_BROKERS, US_BROKERS } from "@/lib/brokers";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+function getDisplayedTradeCostsKrw(trade: {
+  market: "us" | "kr";
+  commission: number | string | null;
+  tax: number | string | null;
+  secFee: number | string | null;
+}): number {
+  const commission = Number(trade.commission ?? 0);
+  const tax = Number(trade.tax ?? 0);
+  const secFee = Number(trade.secFee ?? 0);
+
+  // 기존 미국 거래는 SEC Fee 원화 값이 tax에, 새 거래는 secFee에 저장될 수 있다.
+  return trade.market === "us"
+    ? commission + (tax > 0 ? tax : secFee)
+    : commission + tax;
+}
+
 // ─── 거래 입력 폼 ─────────────────────────────────────────────────────────────
 
 function TradeForm({
@@ -216,7 +232,11 @@ function TradeForm({
     const total = calcTotalKrw();
     if (!total) return 0;
     if (market === "kr") return total * 0.002; // 0.20%
-    // SEC Fee
+    return 0;
+  }
+
+  function calcSecFeeKrw(): number {
+    if (market !== "us" || form.tradeType !== "sell") return 0;
     const qty = Number(form.quantity);
     const price = Number(form.price);
     const rate = Number(form.exchangeRate);
@@ -242,7 +262,7 @@ function TradeForm({
     const commission = calcCommission();
     const tax = calcTax();
     const secFee = market === "us" && form.tradeType === "sell"
-      ? qty * price * (Number(settings?.secFeeRate ?? 0.0008) / 100)
+      ? calcSecFeeKrw()
       : 0;
 
     createMutation.mutate({
@@ -266,6 +286,7 @@ function TradeForm({
   const totalKrw = calcTotalKrw();
   const commission = calcCommission();
   const tax = calcTax();
+  const secFeeKrw = calcSecFeeKrw();
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -494,7 +515,7 @@ function TradeForm({
                   <span className="text-muted-foreground">
                     {market === "kr" ? "증권거래세" : "SEC Fee"}
                   </span>
-                  <span className="font-mono text-loss">-{formatKrw(tax)}</span>
+                  <span className="font-mono text-loss">-{formatKrw(market === "kr" ? tax : secFeeKrw)}</span>
                 </div>
               )}
               <div className="flex justify-between border-t border-border/50 pt-1.5">
@@ -503,7 +524,7 @@ function TradeForm({
                   {formatKrw(
                     form.tradeType === "buy"
                       ? totalKrw + commission
-                      : totalKrw - commission - tax
+                      : totalKrw - commission - tax - secFeeKrw
                   )}
                 </span>
               </div>
@@ -791,7 +812,7 @@ function TradeTable({ market, searchTicker, tradeTypeFilter = "all", dateFrom = 
                 <td className="px-4 py-3">
                   <p className="font-semibold">{trade.ticker}</p>
                   {trade.tickerName && (
-                    <p className="text-xs text-muted-foreground truncate max-w-28">{trade.tickerName}</p>
+                    <p className="mt-0.5 min-w-[13rem] whitespace-normal break-words text-xs leading-5 text-muted-foreground">{trade.tickerName}</p>
                   )}
                 </td>
                 <td className="px-4 py-3 text-right font-mono">
@@ -811,7 +832,7 @@ function TradeTable({ market, searchTicker, tradeTypeFilter = "all", dateFrom = 
                   {formatKrw(Number(trade.totalAmountKrw))}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-loss text-xs">
-                  -{formatKrw(Number(trade.commission) + Number(trade.tax))}
+                  -{formatKrw(getDisplayedTradeCostsKrw(trade))}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground text-xs max-w-32 truncate">
                   {trade.memo ?? "—"}
@@ -925,9 +946,9 @@ function TickerSummaryTable({ market }: { market: "us" | "kr" }) {
             <thead>
               <tr className="border-b border-border/50">
                 <th className="text-left text-xs text-muted-foreground font-medium px-4 py-3 uppercase tracking-wider">종목</th>
-                <th className="text-right text-xs text-muted-foreground font-medium px-4 py-3 uppercase tracking-wider">매수 총액</th>
+                <th className="text-right text-xs text-muted-foreground font-medium px-4 py-3 uppercase tracking-wider">매수 원가</th>
                 <th className="text-right text-xs text-muted-foreground font-medium px-4 py-3 uppercase tracking-wider">매도 총액</th>
-                <th className="text-right text-xs text-muted-foreground font-medium px-4 py-3 uppercase tracking-wider">수수료+세금</th>
+                <th className="text-right text-xs text-muted-foreground font-medium px-4 py-3 uppercase tracking-wider">매도 비용</th>
                 <th className="text-right text-xs text-muted-foreground font-medium px-4 py-3 uppercase tracking-wider">실현 손익</th>
                 <th className="text-right text-xs text-muted-foreground font-medium px-4 py-3 uppercase tracking-wider">보유수량</th>
               </tr>
@@ -936,20 +957,18 @@ function TickerSummaryTable({ market }: { market: "us" | "kr" }) {
               {summary.map((row) => {
                 const buyQty = Number(row.totalBuyQty ?? 0);
                 const sellQty = Number(row.totalSellQty ?? 0);
-                const holdingQty = Math.max(0, buyQty - sellQty);
-                const buyKrw = Number(row.totalBuyAmountKrw ?? 0);
+                const holdingQty = Number(row.holdingQty ?? Math.max(0, buyQty - sellQty));
+                const buyKrw = Number(row.totalBuyCostKrw ?? row.totalBuyAmountKrw ?? 0);
                 const sellKrw = Number(row.totalSellAmountKrw ?? 0);
-                const commission = Number(row.totalCommission ?? 0);
-                const tax = Number(row.totalTax ?? 0);
-                const avgCost = buyQty > 0 ? buyKrw / buyQty : 0;
-                const realizedPnl = sellKrw - avgCost * sellQty - commission - tax;
+                const sellCosts = Number(row.totalSellCostKrw ?? 0);
+                const realizedPnl = Number(row.realizedPnlKrw ?? 0);
 
                 return (
                   <tr key={row.ticker} className="border-b border-border/30 hover:bg-accent/20 transition-colors">
                     <td className="px-4 py-3">
                       <p className="font-semibold">{row.ticker}</p>
                       {row.tickerName && (
-                        <p className="text-xs text-muted-foreground">{row.tickerName}</p>
+                        <p className="mt-0.5 min-w-[13rem] whitespace-normal break-words text-xs leading-5 text-muted-foreground">{row.tickerName}</p>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-muted-foreground">
@@ -959,7 +978,7 @@ function TickerSummaryTable({ market }: { market: "us" | "kr" }) {
                       {sellKrw > 0 ? formatKrw(sellKrw) : "—"}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-loss text-xs">
-                      -{formatKrw(commission + tax)}
+                      -{formatKrw(sellCosts)}
                     </td>
                     <td className={`px-4 py-3 text-right font-mono font-semibold ${getPnlColorClass(realizedPnl)}`}>
                       {sellKrw > 0 ? formatKrw(realizedPnl, true) : "—"}

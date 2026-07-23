@@ -42,6 +42,7 @@ interface TickerSummary {
   totalBuyKrw: number;
   totalSellKrw: number;
   soldCostKrw: number;
+  netSellProceedsKrw: number;
   avgCostKrw: number;
   avgCostUsd: number | null; // 미국주식일 때만 유효
   currentPriceKrw: number | null;
@@ -71,8 +72,9 @@ function buildPortfolio(
   const tickers: TickerSummary[] = summaryRows.map((row) => {
     const buyQty = Number(row.totalBuyQty ?? 0);
     const sellQty = Number(row.totalSellQty ?? 0);
-    const holdingQty = Math.max(0, buyQty - sellQty);
-    const totalBuyKrw = Number(row.totalBuyAmountKrw ?? 0);
+    const holdingQty = Number(row.holdingQty ?? Math.max(0, buyQty - sellQty));
+    // 매수 수수료가 포함된 실제 보유 원가를 투자 원금으로 사용한다.
+    const totalBuyKrw = Number(row.totalBuyCostKrw ?? row.totalBuyAmountKrw ?? 0);
     const totalSellKrw = Number(row.totalSellAmountKrw ?? 0);
     const commission = Number(row.totalCommission ?? 0);
     const tax = Number(row.totalTax ?? 0);
@@ -83,12 +85,13 @@ function buildPortfolio(
       ? Number(row.avgCostUsdMoving)
       : null;
 
-    // 실현 손익 = 매도 총액 - (매도 수량 × 평균 매수 단가)
-    // 즉, 실제로 팔아서 회수한 금액 - 그 수량만큼의 원가
-    const soldCostKrw = avgCostKrw * sellQty;
-    const realizedPnl = sellQty > 0 ? totalSellKrw - soldCostKrw : 0;
-    // 실현 수익률 = 실현 손익 / 매도 수량 원가 × 100
-    const realizedPnlRate = soldCostKrw > 0 ? (realizedPnl / soldCostKrw) * 100 : null;
+    // 서버에서 거래 날짜 순으로 재생한 이동평균 원가·매도 비용 반영 결과를 그대로 사용한다.
+    const soldCostKrw = Number(row.realizedCostKrw ?? 0);
+    const netSellProceedsKrw = Number(row.netSellProceedsKrw ?? totalSellKrw);
+    const realizedPnl = Number(row.realizedPnlKrw ?? 0);
+    const realizedPnlRate = row.realizedPnlRate === null || row.realizedPnlRate === undefined
+      ? null
+      : Number(row.realizedPnlRate);
 
     const currentPriceKrw = prices[row.ticker] ?? null;
     const currentValueKrw = currentPriceKrw !== null ? currentPriceKrw * holdingQty : null;
@@ -115,8 +118,9 @@ function buildPortfolio(
       unrealizedPnl,
       unrealizedPnlRate,
       realizedPnl,
-      realizedPnlRate: realizedPnlRate ?? null,
+      realizedPnlRate,
       soldCostKrw,
+      netSellProceedsKrw,
       totalCommission: commission,
       totalTax: tax,
       weight: 0,
@@ -252,7 +256,7 @@ function SummaryCard({
 
 export default function Dashboard() {
   const { isAuthenticated } = useAuth();
-  const [activeTab, setActiveTab] = useState<"all" | "us" | "kr">("all");
+  const [activeTab, setActiveTab] = useState<"us" | "kr">("us");
   const [priceEnabled, setPriceEnabled] = useState(true); // 페이지 진입 시 자동 활성화
 
   // 로그인 확인 후 쿼리 실행
@@ -346,24 +350,12 @@ export default function Dashboard() {
     return batchKrPrices?.prices ?? {};
   }, [batchKrPrices]);
 
-  // 전체 가격 맵 (미국 + 국내 합산)
-  const allPriceMapKrw = useMemo(() => ({
-    ...priceMapKrw,
-    ...krPriceMapKrw,
-  }), [priceMapKrw, krPriceMapKrw]);
-
   const isLoading = usLoading || krLoading || monthlyLoading;
-
-  const portfolio = useMemo(() => {
-    const allSummary = [...(usSummary ?? []), ...(krSummary ?? [])];
-    return buildPortfolio(allSummary, allPriceMapKrw);
-  }, [usSummary, krSummary, allPriceMapKrw]);
 
   const usPortfolio = useMemo(() => buildPortfolio(usSummary ?? [], priceMapKrw), [usSummary, priceMapKrw]);
   const krPortfolio = useMemo(() => buildPortfolio(krSummary ?? [], krPriceMapKrw), [krSummary, krPriceMapKrw]);
 
-  const currentPortfolio =
-    activeTab === "us" ? usPortfolio : activeTab === "kr" ? krPortfolio : portfolio;
+  const currentPortfolio = activeTab === "us" ? usPortfolio : krPortfolio;
 
   // 도넛 차트 - 보유 중인 종목 전체
   const pieData = useMemo(
@@ -396,10 +388,9 @@ export default function Dashboard() {
     for (const row of monthlyData) {
       const ym = row.yearMonth;
       if (!byMonth[ym]) byMonth[ym] = { us: 0, kr: 0 };
-      const sell = Number(row.totalSellKrw ?? 0);
-      const buy = Number(row.totalBuyKrw ?? 0);
-      if (row.market === "us") byMonth[ym].us += sell - buy;
-      else byMonth[ym].kr += sell - buy;
+      const realizedPnl = Number(row.realizedPnlKrw ?? 0);
+      if (row.market === "us") byMonth[ym].us += realizedPnl;
+      else byMonth[ym].kr += realizedPnl;
     }
     return Object.entries(byMonth)
       .sort(([a], [b]) => a.localeCompare(b))
@@ -473,19 +464,13 @@ export default function Dashboard() {
         {/* 탭 */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
           <TabsList className="bg-card border border-border/50">
-            <TabsTrigger value="all">전체</TabsTrigger>
             <TabsTrigger value="us">미국주식</TabsTrigger>
             <TabsTrigger value="kr">국내주식</TabsTrigger>
           </TabsList>
 
           <TabsContent value={activeTab} className="mt-6 space-y-6">
             {/* 요약 카드 */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <SummaryCard
-                title="총 평가금액"
-                value={formatKrw(currentPortfolio.totalCurrentValue)}
-                icon={Wallet}
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <SummaryCard
                 title="투자 원금"
                 value={formatKrw(currentPortfolio.totalInvested)}
@@ -498,9 +483,9 @@ export default function Dashboard() {
                 icon={currentPortfolio.totalUnrealizedPnl >= 0 ? TrendingUp : TrendingDown}
               />
               <SummaryCard
-                title="실현 손익"
-                value={formatKrw(currentPortfolio.totalRealizedPnl, true)}
-                isPositive={currentPortfolio.totalRealizedPnl > 0 ? true : currentPortfolio.totalRealizedPnl < 0 ? false : null}
+                title="총 평가금액"
+                value={formatKrw(currentPortfolio.totalCurrentValue)}
+                icon={Wallet}
               />
             </div>
 

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   Dividend,
@@ -19,6 +19,7 @@ import {
   userSettings,
   users,
 } from "../drizzle/schema";
+import { calculatePortfolioLedger } from "../shared/portfolioLedger";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -168,9 +169,10 @@ export async function getPortfolioSummary(userId: number, market?: "us" | "kr") 
   const conditions = [eq(trades.userId, userId)];
   if (market) conditions.push(eq(trades.market, market));
 
-  // 1) 전체 거래 내역을 날짜 순으로 가져옴
+  // 전체 거래를 시간순으로 재생해 부분 매도·재매수에도 정확한 이동평균 원가를 적용한다.
   const allTrades = await db
     .select({
+      id: trades.id,
       ticker: trades.ticker,
       market: trades.market,
       tickerName: trades.tickerName,
@@ -181,109 +183,34 @@ export async function getPortfolioSummary(userId: number, market?: "us" | "kr") 
       totalAmountKrw: trades.totalAmountKrw,
       commission: trades.commission,
       tax: trades.tax,
+      secFee: trades.secFee,
       tradeDate: trades.tradeDate,
     })
     .from(trades)
     .where(and(...conditions))
     .orderBy(trades.tradeDate, trades.id);
 
-  // 2) 종목별 이동평균법으로 평균단가 계산
-  type TickerState = {
-    ticker: string;
-    market: string;
-    tickerName: string | null;
-    holdingQty: number;
-    holdingCostKrw: number;  // 현재 보유 원가 합계
-    holdingCostUsd: number;  // 현재 보유 달러 원가 합계 (미국주식)
-    totalBuyQty: number;
-    totalSellQty: number;
-    totalBuyAmountKrw: number;
-    totalSellAmountKrw: number;
-    totalBuyAmountUsd: number;
-    totalCommission: number;
-    totalTax: number;
-    avgCostKrw: number;      // 이동평균 원화 단가
-    avgCostUsd: number;      // 이동평균 달러 단가
-  };
+  const { summaries } = calculatePortfolioLedger(allTrades);
 
-  const map = new Map<string, TickerState>();
-
-  for (const t of allTrades) {
-    const key = `${t.ticker}__${t.market}`;
-    if (!map.has(key)) {
-      map.set(key, {
-        ticker: t.ticker,
-        market: t.market,
-        tickerName: t.tickerName ?? null,
-        holdingQty: 0,
-        holdingCostKrw: 0,
-        holdingCostUsd: 0,
-        totalBuyQty: 0,
-        totalSellQty: 0,
-        totalBuyAmountKrw: 0,
-        totalSellAmountKrw: 0,
-        totalBuyAmountUsd: 0,
-        totalCommission: 0,
-        totalTax: 0,
-        avgCostKrw: 0,
-        avgCostUsd: 0,
-      });
-    }
-    const s = map.get(key)!;
-    if (t.tickerName) s.tickerName = t.tickerName;
-
-    const qty = Number(t.quantity);
-    const amtKrw = Number(t.totalAmountKrw);
-    const priceUsd = Number(t.price);
-    const comm = Number(t.commission ?? 0);
-    const tax = Number(t.tax ?? 0);
-
-    s.totalCommission += comm;
-    s.totalTax += tax;
-
-    if (t.tradeType === 'buy') {
-      // 이동평균법: 신규 매수 시 보유 원가에 추가
-      s.holdingCostKrw += amtKrw;
-      s.holdingCostUsd += qty * priceUsd;
-      s.holdingQty += qty;
-      s.totalBuyQty += qty;
-      s.totalBuyAmountKrw += amtKrw;
-      s.totalBuyAmountUsd += qty * priceUsd;
-      // 이동평균 단가 갱신
-      s.avgCostKrw = s.holdingQty > 0 ? s.holdingCostKrw / s.holdingQty : 0;
-      s.avgCostUsd = s.holdingQty > 0 ? s.holdingCostUsd / s.holdingQty : 0;
-    } else {
-      // 매도: 현재 이동평균 단가 기준으로 보유 원가에서 차감
-      const costKrwPerShare = s.holdingQty > 0 ? s.holdingCostKrw / s.holdingQty : 0;
-      const costUsdPerShare = s.holdingQty > 0 ? s.holdingCostUsd / s.holdingQty : 0;
-      s.holdingCostKrw -= costKrwPerShare * qty;
-      s.holdingCostUsd -= costUsdPerShare * qty;
-      s.holdingQty -= qty;
-      s.totalSellQty += qty;
-      s.totalSellAmountKrw += amtKrw;
-      // 매도 후 보유 수량이 0이면 원가도 0으로 초기화
-      if (s.holdingQty <= 0) {
-        s.holdingQty = 0;
-        s.holdingCostKrw = 0;
-        s.holdingCostUsd = 0;
-      }
-      // 이동평균 단가는 매도 시 변하지 않음 (보유 수량 기준 유지)
-    }
-  }
-
-  // 3) 결과 포맷 변환
-  return Array.from(map.values()).map((s) => ({
+  return summaries.map((s) => ({
     ticker: s.ticker,
     tickerName: s.tickerName,
     market: s.market,
     totalBuyAmountKrw: String(s.totalBuyAmountKrw),
+    totalBuyCostKrw: String(s.totalBuyCostKrw),
     totalSellAmountKrw: String(s.totalSellAmountKrw),
+    totalSellCostKrw: String(s.totalSellCostKrw),
+    netSellProceedsKrw: String(s.netSellProceedsKrw),
     totalBuyQty: String(s.totalBuyQty),
     totalSellQty: String(s.totalSellQty),
+    holdingQty: String(s.holdingQty),
     totalCommission: String(s.totalCommission),
     totalTax: String(s.totalTax),
+    totalSecFeeKrw: String(s.totalSecFeeKrw),
     totalBuyAmountUsd: String(s.totalBuyAmountUsd),
-    // 이동평균법으로 계산된 현재 보유 평균단가
+    realizedCostKrw: String(s.realizedCostKrw),
+    realizedPnlKrw: String(s.realizedPnlKrw),
+    realizedPnlRate: s.realizedCostKrw > 0 ? String((s.realizedPnlKrw / s.realizedCostKrw) * 100) : null,
     avgCostKrwMoving: String(s.avgCostKrw),
     avgCostUsdMoving: String(s.avgCostUsd),
   }));
@@ -293,19 +220,40 @@ export async function getMonthlyPnL(userId: number) {
   const db = await getDb();
   if (!db) return [];
 
-    const result = await db
+  const allTrades = await db
     .select({
-      yearMonth: sql<string>`DATE_FORMAT(tradeDate, '%Y-%m')`,
+      id: trades.id,
+      ticker: trades.ticker,
       market: trades.market,
-      totalBuyKrw: sql<string>`SUM(CASE WHEN tradeType = 'buy' THEN totalAmountKrw ELSE 0 END)`,
-      totalSellKrw: sql<string>`SUM(CASE WHEN tradeType = 'sell' THEN totalAmountKrw ELSE 0 END)`,
+      tickerName: trades.tickerName,
+      tradeType: trades.tradeType,
+      quantity: trades.quantity,
+      price: trades.price,
+      exchangeRate: trades.exchangeRate,
+      totalAmountKrw: trades.totalAmountKrw,
+      commission: trades.commission,
+      tax: trades.tax,
+      secFee: trades.secFee,
+      tradeDate: trades.tradeDate,
     })
     .from(trades)
     .where(eq(trades.userId, userId))
-    .groupBy(sql`DATE_FORMAT(tradeDate, '%Y-%m')`, trades.market)
-    .orderBy(sql`DATE_FORMAT(tradeDate, '%Y-%m')`);
+    .orderBy(trades.tradeDate, trades.id);
 
-  return result;
+  const { saleEvents } = calculatePortfolioLedger(allTrades);
+  const byMonth = new Map<string, { yearMonth: string; market: "us" | "kr"; realizedPnlKrw: number }>();
+
+  for (const sale of saleEvents) {
+    const yearMonth = sale.tradeDate.toISOString().slice(0, 7);
+    const key = `${yearMonth}__${sale.market}`;
+    const existing = byMonth.get(key) ?? { yearMonth, market: sale.market, realizedPnlKrw: 0 };
+    existing.realizedPnlKrw += sale.realizedPnlKrw;
+    byMonth.set(key, existing);
+  }
+
+  return Array.from(byMonth.values())
+    .sort((a, b) => a.yearMonth.localeCompare(b.yearMonth) || a.market.localeCompare(b.market))
+    .map((row) => ({ ...row, realizedPnlKrw: String(row.realizedPnlKrw) }));
 }
 
 // ─── Settings ─────────────────────────────────────────────────────────────────

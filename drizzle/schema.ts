@@ -38,7 +38,7 @@ export const trades = mysqlTable("trades", {
   totalAmountKrw: decimal("totalAmountKrw", { precision: 20, scale: 2 }).notNull(), // 원화 환산 총금액
   commission: decimal("commission", { precision: 18, scale: 2 }).default("0"), // 수수료 (원화)
   tax: decimal("tax", { precision: 18, scale: 2 }).default("0"), // 세금 (원화)
-  secFee: decimal("secFee", { precision: 18, scale: 6 }).default("0"), // SEC Fee (USD, 미국주식 매도 시)
+  secFee: decimal("secFee", { precision: 18, scale: 6 }).default("0"), // SEC Fee (원화, 미국주식 매도 시)
   broker: varchar("broker", { length: 50 }), // 증권사 (예: NH투자증권, 미래에셋증권, 키움증권 등)
   memo: text("memo"),
   tradeDate: timestamp("tradeDate").notNull(),
