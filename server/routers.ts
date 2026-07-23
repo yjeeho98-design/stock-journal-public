@@ -24,6 +24,7 @@ import {
   updateFundRecord,
   updateJournalEntry,
   updateTrade,
+  updateTickerNameForUser,
   upsertUserSettings,
 } from "./db";
 import {
@@ -33,6 +34,50 @@ import {
   searchKrTicker,
   searchUsTicker,
 } from "./marketData";
+
+type TickerNameRow = {
+  ticker: string;
+  market: "us" | "kr";
+  tickerName: string | null;
+};
+
+/**
+ * 과거 CSV·수기 거래에서 비어 있는 종목명을 시장별 조회로 보강하고, 다음 조회부터는 DB 값으로 보여준다.
+ */
+async function enrichTickerNames<T extends TickerNameRow>(userId: number, rows: T[]): Promise<T[]> {
+  const missing = Array.from(
+    new Map(
+      rows
+        .filter((row) => !row.tickerName?.trim())
+        .map((row) => [`${row.market}__${row.ticker}`, row] as const)
+    ).values()
+  ).slice(0, 50);
+
+  if (missing.length === 0) return rows;
+
+  const results = await Promise.allSettled(
+    missing.map(async (row) => {
+      const quote = row.market === "us"
+        ? await getUsStockPrice(row.ticker)
+        : await getKrStockPrice(row.ticker);
+      return { row, name: quote?.name?.trim() ?? "" };
+    })
+  );
+
+  const names = new Map<string, string>();
+  for (const result of results) {
+    if (result.status !== "fulfilled" || !result.value.name) continue;
+    const { row, name } = result.value;
+    const key = `${row.market}__${row.ticker}`;
+    names.set(key, name);
+    await updateTickerNameForUser(userId, row.market, row.ticker, name);
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    tickerName: row.tickerName?.trim() || names.get(`${row.market}__${row.ticker}`) || null,
+  }));
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -129,7 +174,8 @@ export const appRouter = router({
         })
       )
       .query(async ({ ctx, input }) => {
-        return await getTradesByUser(ctx.user.id, input);
+        const rows = await getTradesByUser(ctx.user.id, input);
+        return await enrichTickerNames(ctx.user.id, rows);
       }),
 
     create: protectedProcedure
@@ -223,7 +269,8 @@ export const appRouter = router({
     portfolioSummary: protectedProcedure
       .input(z.object({ market: z.enum(["us", "kr"]).optional() }))
       .query(async ({ ctx, input }) => {
-        return await getPortfolioSummary(ctx.user.id, input.market);
+        const summary = await getPortfolioSummary(ctx.user.id, input.market);
+        return await enrichTickerNames(ctx.user.id, summary);
       }),
 
     monthlyPnL: protectedProcedure.query(async ({ ctx }) => {

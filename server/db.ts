@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   Dividend,
@@ -129,6 +129,29 @@ export async function getTradeById(id: number, userId: number): Promise<Trade | 
     .where(and(eq(trades.id, id), eq(trades.userId, userId)))
     .limit(1);
   return result[0];
+}
+
+/** 빈 종목명을 외부 시세 조회 결과로 보강할 때 동일 종목의 과거 거래에도 함께 반영한다. */
+export async function updateTickerNameForUser(
+  userId: number,
+  market: "us" | "kr",
+  ticker: string,
+  tickerName: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db || !tickerName) return;
+
+  await db
+    .update(trades)
+    .set({ tickerName })
+    .where(
+      and(
+        eq(trades.userId, userId),
+        eq(trades.market, market),
+        eq(trades.ticker, ticker.toUpperCase()),
+        or(isNull(trades.tickerName), eq(trades.tickerName, ""))
+      )
+    );
 }
 
 export async function updateTrade(

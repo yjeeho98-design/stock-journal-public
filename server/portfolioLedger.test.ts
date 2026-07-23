@@ -65,4 +65,22 @@ describe("calculatePortfolioLedger", () => {
     expect(tsm.realizedCostKrw).toBe(1_400);
     expect(tsm.realizedPnlKrw).toBe(320);
   });
+
+  it("레거시 미국 매도의 원화 SEC Fee를 환율로 다시 곱하지 않는다", () => {
+    const { summaries } = calculatePortfolioLedger([
+      {
+        id: 1, ticker: "TEST", market: "us", tradeType: "buy", quantity: 1, price: 100,
+        exchangeRate: 1_500, totalAmountKrw: 150_000, tradeDate: new Date("2025-01-01T00:00:00.000Z"),
+      },
+      {
+        id: 2, ticker: "TEST", market: "us", tradeType: "sell", quantity: 1, price: 110,
+        exchangeRate: 1_500, totalAmountKrw: 165_000, commission: 412.5, secFee: 1.32,
+        tradeDate: new Date("2025-02-01T00:00:00.000Z"),
+      },
+    ]);
+
+    const summary = summaries[0]!;
+    expect(summary.totalSellCostKrw).toBeCloseTo(413.82, 6);
+    expect(summary.realizedPnlKrw).toBeCloseTo(14_586.18, 6);
+  });
 });
